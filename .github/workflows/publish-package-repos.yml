@@ -26,54 +26,33 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
-          mkdir -p build/rpm build/deb site/repos/rpm site/repos/deb
+          mkdir -p build/deb site/repos/rpm/packages site/repos/deb
 
-          gh release list --repo "$REPO" --limit 10 \
+          # RPMs go directly to site (dnf needs them served alongside metadata)
+          gh release list --repo "$REPO" --limit 3 \
             --json tagName -q '.[].tagName' | while read -r tag; do
             gh release download "$tag" --repo "$REPO" \
-              --pattern '*.rpm' --skip-existing --dir build/rpm || true
+              --pattern '*.rpm' --skip-existing --dir site/repos/rpm/packages || true
             gh release download "$tag" --repo "$REPO" \
               --pattern '*.deb' --skip-existing --dir build/deb || true
           done
 
-          echo "=== RPMs ==="
-          ls -la build/rpm/ || echo "(none)"
-          echo "=== DEBs ==="
-          ls -la build/deb/ || echo "(none)"
+          echo "=== RPMs (served from Pages) ==="
+          ls -lh site/repos/rpm/packages/ || echo "(none)"
+          echo "=== DEBs (metadata only, packages served from GitHub Releases) ==="
+          ls -lh build/deb/ || echo "(none)"
 
-      - name: Build RPM repo metadata (metadata only)
-        env:
-          REPO: ${{ github.repository }}
-        run: |
-          # Generate metadata from local RPMs
-          createrepo_c build/rpm/
+      - name: Build RPM repo metadata
+        run: createrepo_c site/repos/rpm/
 
-          # Rewrite package locations to point at GitHub Releases
-          for xml_gz in build/rpm/repodata/*-primary.xml.gz; do
-            gunzip "$xml_gz"
-            xml="${xml_gz%.gz}"
-            # e.g. packages/Handy-0.8.0-1.x86_64.rpm -> full GitHub Releases URL
-            for rpm_file in build/rpm/*.rpm; do
-              filename=$(basename "$rpm_file")
-              # Extract version from filename: Handy-0.8.0-1.x86_64.rpm -> 0.8.0
-              version=$(echo "$filename" | sed -n 's/.*-\([0-9][0-9.]*\)-.*/\1/p')
-              release_url="https://github.com/${REPO}/releases/download/v${version}/${filename}"
-              sed -i "s|<location href=\"${filename}\"/>|<location href=\"${release_url}\"/>|" "$xml"
-            done
-            gzip "$xml"
-          done
-
-          # Copy only metadata to site (no packages)
-          cp -r build/rpm/repodata site/repos/rpm/
-
-      - name: Build DEB repo metadata (metadata only)
+      - name: Build DEB repo metadata (redirects to GitHub Releases)
         env:
           REPO: ${{ github.repository }}
         run: |
           cd build/deb
           dpkg-scanpackages --multiversion . > Packages
 
-          # Rewrite Filename paths to GitHub Releases URLs
+          # Rewrite Filename paths to point at GitHub Releases
           while IFS= read -r line; do
             if [[ "$line" =~ ^Filename:\ ./(.+) ]]; then
               filename="${BASH_REMATCH[1]}"
@@ -82,8 +61,8 @@ jobs:
             else
               echo "$line"
             fi
-          done < Packages > Packages.tmp
-          mv Packages.tmp Packages
+          done < Packages > Packages.rewritten
+          mv Packages.rewritten Packages
 
           gzip -k Packages
           cd -
