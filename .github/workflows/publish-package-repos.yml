@@ -81,20 +81,17 @@ jobs:
           <h1>Handy Package Repositories</h1>
           <p>Auto-updated from <a href="https://github.com/${{ github.repository }}/releases">GitHub Releases</a>.</p>
 
-          <h2>Fedora / RPM-based (including Silverblue / Atomic)</h2>
-          <pre>sudo curl -o /etc/yum.repos.d/handy.repo \\
-            https://${PAGES_URL}/repos/rpm/handy.repo
-
-          # Atomic desktops
-          sudo rpm-ostree install Handy
-
-          # Traditional Fedora
+          <h2>Fedora</h2>
+          <pre>sudo dnf config-manager addrepo --from-repofile=https://${PAGES_URL}/repos/rpm/handy.repo
           sudo dnf install Handy</pre>
 
-          <h2>Ubuntu / Debian</h2>
-          <pre>sudo curl -o /etc/apt/sources.list.d/handy.list \\
-            https://${PAGES_URL}/repos/deb/handy.list
+          <h2>Fedora Atomic (Silverblue, Kinoite, uCore, etc.)</h2>
+          <pre>sudo curl -o /etc/yum.repos.d/handy.repo https://${PAGES_URL}/repos/rpm/handy.repo
+          rpm-ostree install Handy</pre>
+          <p>See <a href="https://docs.fedoraproject.org/en-US/iot/add-repos/">Fedora docs: Configuring Package Repositories</a> for more on adding repos to atomic/immutable desktops.</p>
 
+          <h2>Ubuntu / Debian</h2>
+          <pre>sudo curl -o /etc/apt/sources.list.d/handy.list https://${PAGES_URL}/repos/deb/handy.list
           sudo apt update &amp;&amp; sudo apt install handy</pre>
           </body>
           </html>
