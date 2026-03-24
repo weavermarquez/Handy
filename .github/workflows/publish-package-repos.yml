@@ -53,23 +53,25 @@ jobs:
         run: |
           PAGES_URL="${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
 
-          cat > site/repos/rpm/handy.repo << EOF
+          cat > site/repos/rpm/handy.repo <<-REPOEOF
           [handy]
           name=Handy - Offline Speech-to-Text
           baseurl=https://${PAGES_URL}/repos/rpm/
           enabled=1
           gpgcheck=0
-          EOF
+          REPOEOF
+          sed -i 's/^[[:space:]]*//' site/repos/rpm/handy.repo
 
-          cat > site/repos/deb/handy.list << EOF
+          cat > site/repos/deb/handy.list <<-DEBEOF
           deb [trusted=yes] https://${PAGES_URL}/repos/deb /
-          EOF
+          DEBEOF
+          sed -i 's/^[[:space:]]*//' site/repos/deb/handy.list
 
       - name: Write landing page
         run: |
           PAGES_URL="${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
 
-          cat > site/index.html << HTMLEOF
+          cat > site/repos/index.html << HTMLEOF
           <!DOCTYPE html>
           <html>
           <head><title>Handy Package Repos</title>
