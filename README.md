@@ -38,7 +38,8 @@ The process is entirely local:
 
 1. Download the latest release from the [releases page](https://github.com/cjpais/Handy/releases) or the [website](https://handy.computer)
    - **macOS**: Also available via [Homebrew cask](https://formulae.brew.sh/cask/handy): `brew install --cask handy`
-   - **Windows**: Also available via [winget](https://github.com/microsoft/winget-pkgs): `winget install cjpais.Handy` \
+   - **Windows**: Also available via [winget](https://github.com/microsoft/winget-pkgs): `winget install cjpais.Handy`
+   - **Linux**: RPM and DEB [package repos](https://cjpais.github.io/Handy/repos/) are available, along with AppImage downloads from the [releases page](https://github.com/cjpais/Handy/releases). \
      **Note:** The Homebrew cask and winget package are not maintained by the Handy developers.
 2. Install the application
 3. Launch Handy and grant necessary system permissions (microphone, accessibility)

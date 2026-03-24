@@ -1,0 +1,114 @@
+name: Publish Package Repos
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-repos:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install repo tools
+        run: sudo apt-get update && sudo apt-get install -y createrepo-c dpkg-dev
+
+      - name: Download packages from releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p site/repos/rpm/packages site/repos/deb/pool
+
+          gh release list --repo ${{ github.repository }} --limit 10 \
+            --json tagName -q '.[].tagName' | while read -r tag; do
+            gh release download "$tag" --repo ${{ github.repository }} \
+              --pattern '*.rpm' --skip-existing --dir site/repos/rpm/packages || true
+            gh release download "$tag" --repo ${{ github.repository }} \
+              --pattern '*.deb' --skip-existing --dir site/repos/deb/pool || true
+          done
+
+          echo "=== RPMs ==="
+          ls -la site/repos/rpm/packages/ || echo "(none)"
+          echo "=== DEBs ==="
+          ls -la site/repos/deb/pool/ || echo "(none)"
+
+      - name: Build RPM repo metadata
+        run: createrepo_c site/repos/rpm/
+
+      - name: Build DEB repo metadata
+        run: |
+          cd site/repos/deb
+          dpkg-scanpackages --multiversion pool/ > Packages
+          gzip -k Packages
+
+      - name: Write repo config files
+        run: |
+          PAGES_URL="${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+
+          cat > site/repos/rpm/handy.repo <<-REPOEOF
+          [handy]
+          name=Handy - Offline Speech-to-Text
+          baseurl=https://${PAGES_URL}/repos/rpm/
+          enabled=1
+          gpgcheck=0
+          REPOEOF
+          sed -i 's/^[[:space:]]*//' site/repos/rpm/handy.repo
+
+          cat > site/repos/deb/handy.list <<-DEBEOF
+          deb [trusted=yes] https://${PAGES_URL}/repos/deb /
+          DEBEOF
+          sed -i 's/^[[:space:]]*//' site/repos/deb/handy.list
+
+      - name: Write landing page
+        run: |
+          PAGES_URL="${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+
+          cat > site/repos/index.html << HTMLEOF
+          <!DOCTYPE html>
+          <html>
+          <head><title>Handy Package Repos</title>
+          <style>body{font-family:system-ui;max-width:720px;margin:2em auto;padding:0 1em}pre{background:#f4f4f4;padding:1em;overflow-x:auto;border-radius:4px}h2{margin-top:2em}</style>
+          </head>
+          <body>
+          <h1>Handy Package Repositories</h1>
+          <p>Auto-updated from <a href="https://github.com/${{ github.repository }}/releases">GitHub Releases</a>.</p>
+
+          <h2>Fedora</h2>
+          <pre>sudo dnf config-manager addrepo --from-repofile=https://${PAGES_URL}/repos/rpm/handy.repo
+          sudo dnf install Handy</pre>
+
+          <h2>Fedora Atomic (Silverblue, Kinoite, uCore, etc.)</h2>
+          <pre>sudo curl -o /etc/yum.repos.d/handy.repo https://${PAGES_URL}/repos/rpm/handy.repo
+          rpm-ostree install Handy</pre>
+          <p>See <a href="https://docs.fedoraproject.org/en-US/iot/add-repos/">Fedora docs: Configuring Package Repositories</a> for more on adding repos to atomic/immutable desktops.</p>
+
+          <h2>Ubuntu / Debian</h2>
+          <pre>sudo curl -o /etc/apt/sources.list.d/handy.list https://${PAGES_URL}/repos/deb/handy.list
+          sudo apt update &amp;&amp; sudo apt install handy</pre>
+          </body>
+          </html>
+          HTMLEOF
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site/
+
+  deploy:
+    needs: build-repos
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
