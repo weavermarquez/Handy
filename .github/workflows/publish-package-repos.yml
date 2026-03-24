@@ -24,30 +24,71 @@ jobs:
       - name: Download packages from releases
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
         run: |
-          mkdir -p site/repos/rpm/packages site/repos/deb/pool
+          mkdir -p build/rpm build/deb site/repos/rpm site/repos/deb
 
-          gh release list --repo ${{ github.repository }} --limit 10 \
+          gh release list --repo "$REPO" --limit 10 \
             --json tagName -q '.[].tagName' | while read -r tag; do
-            gh release download "$tag" --repo ${{ github.repository }} \
-              --pattern '*.rpm' --skip-existing --dir site/repos/rpm/packages || true
-            gh release download "$tag" --repo ${{ github.repository }} \
-              --pattern '*.deb' --skip-existing --dir site/repos/deb/pool || true
+            gh release download "$tag" --repo "$REPO" \
+              --pattern '*.rpm' --skip-existing --dir build/rpm || true
+            gh release download "$tag" --repo "$REPO" \
+              --pattern '*.deb' --skip-existing --dir build/deb || true
           done
 
           echo "=== RPMs ==="
-          ls -la site/repos/rpm/packages/ || echo "(none)"
+          ls -la build/rpm/ || echo "(none)"
           echo "=== DEBs ==="
-          ls -la site/repos/deb/pool/ || echo "(none)"
+          ls -la build/deb/ || echo "(none)"
 
-      - name: Build RPM repo metadata
-        run: createrepo_c site/repos/rpm/
-
-      - name: Build DEB repo metadata
+      - name: Build RPM repo metadata (metadata only)
+        env:
+          REPO: ${{ github.repository }}
         run: |
-          cd site/repos/deb
-          dpkg-scanpackages --multiversion pool/ > Packages
+          # Generate metadata from local RPMs
+          createrepo_c build/rpm/
+
+          # Rewrite package locations to point at GitHub Releases
+          for xml_gz in build/rpm/repodata/*-primary.xml.gz; do
+            gunzip "$xml_gz"
+            xml="${xml_gz%.gz}"
+            # e.g. packages/Handy-0.8.0-1.x86_64.rpm -> full GitHub Releases URL
+            for rpm_file in build/rpm/*.rpm; do
+              filename=$(basename "$rpm_file")
+              # Extract version from filename: Handy-0.8.0-1.x86_64.rpm -> 0.8.0
+              version=$(echo "$filename" | sed -n 's/.*-\([0-9][0-9.]*\)-.*/\1/p')
+              release_url="https://github.com/${REPO}/releases/download/v${version}/${filename}"
+              sed -i "s|<location href=\"${filename}\"/>|<location href=\"${release_url}\"/>|" "$xml"
+            done
+            gzip "$xml"
+          done
+
+          # Copy only metadata to site (no packages)
+          cp -r build/rpm/repodata site/repos/rpm/
+
+      - name: Build DEB repo metadata (metadata only)
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          cd build/deb
+          dpkg-scanpackages --multiversion . > Packages
+
+          # Rewrite Filename paths to GitHub Releases URLs
+          while IFS= read -r line; do
+            if [[ "$line" =~ ^Filename:\ ./(.+) ]]; then
+              filename="${BASH_REMATCH[1]}"
+              version=$(echo "$filename" | sed -n 's/.*_\([0-9][0-9.]*\)_.*/\1/p')
+              echo "Filename: https://github.com/${REPO}/releases/download/v${version}/${filename}"
+            else
+              echo "$line"
+            fi
+          done < Packages > Packages.tmp
+          mv Packages.tmp Packages
+
           gzip -k Packages
+          cd -
+
+          cp build/deb/Packages build/deb/Packages.gz site/repos/deb/
 
       - name: Write repo config files
         run: |
@@ -83,11 +124,11 @@ jobs:
 
           <h2>Fedora</h2>
           <pre>sudo dnf config-manager addrepo --from-repofile=https://${PAGES_URL}/repos/rpm/handy.repo
-          sudo dnf install Handy</pre>
+          sudo dnf install handy</pre>
 
           <h2>Fedora Atomic (Silverblue, Kinoite, uCore, etc.)</h2>
           <pre>sudo curl -o /etc/yum.repos.d/handy.repo https://${PAGES_URL}/repos/rpm/handy.repo
-          rpm-ostree install Handy</pre>
+          rpm-ostree install handy</pre>
           <p>See <a href="https://docs.fedoraproject.org/en-US/iot/add-repos/">Fedora docs: Configuring Package Repositories</a> for more on adding repos to atomic/immutable desktops.</p>
 
           <h2>Ubuntu / Debian</h2>
@@ -107,7 +148,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url }}repos/
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
